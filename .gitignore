@@ -49,3 +49,14 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Data files
+data/*
+!data/.gitkeep
+!data/bronze/.gitkeep
+!data/silver/.gitkeep
+!data/checkpoints/.gitkeep
+
+# Spark
+.spark_staging/
+checkpoint*/

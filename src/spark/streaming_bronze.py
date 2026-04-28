@@ -23,11 +23,13 @@ def create_spark_session():
     return SparkSession.builder \
         .appName("YouTubeCommentsBronze") \
         .config("spark.sql.streaming.checkpointLocation", "data/checkpoints/bronze") \
-        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1") \
+        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1") \
         .getOrCreate()
 
 def main():
     spark = create_spark_session()
+    # Diagnostic: print Spark version to ensure connector compatibility
+    print("Detected Spark version:", spark.version)
     spark.sparkContext.setLogLevel("WARN")
     
     print("Starting Bronze layer streaming...")
@@ -59,8 +61,16 @@ def main():
     
     print(f"Bronze streaming started. Writing to: {BRONZE_PATH}")
     print("Press Ctrl+C to stop...")
-    
-    query.awaitTermination()
+
+    try:
+        query.awaitTermination()
+    except KeyboardInterrupt:
+        logger.info("Stopping Bronze streaming...")
+    finally:
+        if query.isActive:
+            query.stop()
+        spark.stop()
+        logger.info("Spark session stopped")
 
 if __name__ == "__main__":
     main()
