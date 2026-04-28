@@ -1,0 +1,163 @@
+import os
+import json
+import time
+import logging
+from datetime import datetime
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from kafka import KafkaProducer
+from dotenv import load_dotenv
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load config
+load_dotenv("config/.env")
+API_KEY = os.getenv("YOUTUBE_API_KEY")
+KAFKA_BROKER = "localhost:9092"
+KAFKA_TOPIC = "raw-youtube-comments"
+
+class YouTubeKafkaProducer:
+    def __init__(self):
+        self.youtube = build("youtube", "v3", developerKey=API_KEY)
+        self.producer = KafkaProducer(
+            bootstrap_servers=KAFKA_BROKER,
+            value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
+            acks='all',
+            retries=3
+        )
+        logger.info(f"Connected to Kafka at {KAFKA_BROKER}")
+
+    def search_videos(self, query="technology review", max_results=3):
+        """Search for popular videos by query."""
+        try:
+            response = self.youtube.search().list(
+                q=query,
+                part="id,snippet",
+                type="video",
+                order="viewCount",
+                maxResults=max_results,
+                videoEmbeddable="true"
+            ).execute()
+            
+            videos = []
+            for item in response.get("items", []):
+                video = {
+                    "video_id": item["id"]["videoId"],
+                    "title": item["snippet"]["title"],
+                    "channel": item["snippet"]["channelTitle"],
+                    "published_at": item["snippet"]["publishedAt"]
+                }
+                videos.append(video)
+                logger.info(f"Found video: {video['title'][:60]}...")
+            
+            return videos
+            
+        except HttpError as e:
+            logger.error(f"YouTube API error: {e}")
+            return []
+
+    def fetch_comments(self, video_id, max_results=100):
+        """Fetch top-level comments for a video."""
+        comments = []
+        try:
+            request = self.youtube.commentThreads().list(
+                part="snippet",
+                videoId=video_id,
+                maxResults=min(max_results, 100),  # API max is 100
+                order="relevance"
+            )
+            
+            while request and len(comments) < max_results:
+                response = request.execute()
+                
+                for item in response.get("items", []):
+                    snippet = item["snippet"]["topLevelComment"]["snippet"]
+                    comment = {
+                        "comment_id": item["id"],
+                        "video_id": video_id,
+                        "author": snippet["authorDisplayName"],
+                        "text": snippet["textDisplay"],
+                        "published_at": snippet["publishedAt"],
+                        "like_count": snippet.get("likeCount", 0),
+                        "fetched_at": datetime.utcnow().isoformat() + "Z"
+                    }
+                    comments.append(comment)
+                
+                # Get next page if available
+                request = self.youtube.commentThreads().list_next(request, response)
+                
+                if request:
+                    time.sleep(0.5)  # Rate limiting
+                
+        except HttpError as e:
+            logger.error(f"Error fetching comments for {video_id}: {e}")
+        
+        logger.info(f"Fetched {len(comments)} comments for video {video_id}")
+        return comments
+
+    def send_to_kafka(self, comment):
+        """Send a single comment to Kafka."""
+        try:
+            future = self.producer.send(KAFKA_TOPIC, comment)
+            record_metadata = future.get(timeout=10)
+            logger.debug(f"Sent comment {comment['comment_id']} to partition {record_metadata.partition}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send comment to Kafka: {e}")
+            return False
+
+    def stream_comments(self, query="technology review", videos_per_batch=2, comments_per_video=50):
+        """Main loop: search videos, fetch comments, stream to Kafka."""
+        logger.info(f"Starting comment stream for query: '{query}'")
+        
+        while True:
+            try:
+                # Search for videos
+                videos = self.search_videos(query, max_results=videos_per_batch)
+                
+                for video in videos:
+                    # Fetch comments
+                    comments = self.fetch_comments(video["video_id"], comments_per_video)
+                    
+                    # Stream to Kafka
+                    for comment in comments:
+                        self.send_to_kafka(comment)
+                        time.sleep(0.1)  # Small delay between messages
+                    
+                    logger.info(f"Streamed {len(comments)} comments from: {video['title'][:50]}")
+                    time.sleep(2)  # Pause between videos
+                
+                logger.info(f"Batch complete. Waiting before next search...")
+                time.sleep(30)  # Wait 30 seconds between batches
+                
+            except KeyboardInterrupt:
+                logger.info("Shutting down producer...")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                time.sleep(10)
+
+    def close(self):
+        """Cleanup resources."""
+        self.producer.flush()
+        self.producer.close()
+        logger.info("Producer closed")
+
+if __name__ == "__main__":
+    producer = YouTubeKafkaProducer()
+    try:
+        # Stream comments indefinitely
+        producer.stream_comments(
+            query="vaatividya",
+            videos_per_batch=2,
+            comments_per_video=50
+        )
+    except KeyboardInterrupt:
+        print("\nStopped by user")
+    finally:
+        producer.close()
