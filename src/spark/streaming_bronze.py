@@ -1,4 +1,5 @@
 import os
+import logging
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, current_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
@@ -25,6 +26,9 @@ def create_spark_session():
         .config("spark.sql.streaming.checkpointLocation", "data/checkpoints/bronze") \
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1") \
         .getOrCreate()
+
+# Logger for the streaming job
+logger = logging.getLogger(__name__)
 
 def main():
     spark = create_spark_session()
