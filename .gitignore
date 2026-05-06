@@ -60,3 +60,13 @@ data/*
 # Spark
 .spark_staging/
 checkpoint*/
+
+# Pentaho generated files
+pentaho/*.ktr
+pentaho/*.kjb
+
+# But keep the generator and docs
+!pentaho/generate_ktr.py
+!pentaho/run_pentaho_batch.py
+!pentaho/README.md
+!pentaho/Dockerfile
