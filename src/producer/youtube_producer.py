@@ -183,8 +183,8 @@ if __name__ == "__main__":
     try:
         producer.stream_comments(
             query=None,              # Random queries
-            videos_per_batch=10,      # 8 videos per batch
-            comments_per_video=50   # 100 comments each
+            videos_per_batch=10,      # 10 videos per batch
+            comments_per_video=50   # 50 comments each
         )
     except KeyboardInterrupt:
         print("\nStopped by user")
