@@ -1,8 +1,8 @@
-import os
+import html
 import re
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lower, regexp_replace, length, when, to_timestamp, current_timestamp, udf
-from pyspark.sql.types import BooleanType
+from pyspark.sql.functions import col, lower, regexp_replace, length, when, to_timestamp, current_timestamp, udf, lit
+from pyspark.sql.types import BooleanType, StringType
 
 # PostgreSQL config
 JDBC_URL = "jdbc:postgresql://localhost:5432/youtube_dw"
@@ -29,6 +29,41 @@ def contains_url(text):
 
 contains_url_udf = udf(contains_url, BooleanType())
 
+def clean_text(text):
+    """
+    Properly clean YouTube comment text:
+    1. Decode HTML entities (&#39; → ', &quot; → ", etc.)
+    2. Remove HTML tags (<a href...>, <br>, etc.)
+    3. Remove URLs
+    4. Remove extra whitespace
+    """
+    if text is None:
+        return ""
+    
+    # Step 1: Decode HTML entities
+    # haven39t -> haven't (&#39; is apostrophe)
+    text = html.unescape(text)
+    
+    # Step 2: Remove HTML tags
+    text = re.sub(r'<[^>]+>', ' ', text)
+    
+    # Step 3: Remove URLs
+    text = re.sub(r'http\S+|www.\S+|https\S+', '', text, flags=re.IGNORECASE)
+    
+    # Step 4: Remove @mentions and hashtags for cleaner text
+    text = re.sub(r'@\w+|#\w+', '', text)
+    
+    # Step 5: Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Step 6: Lowercase
+    text = text.lower()
+    
+    return text
+
+# Register as UDF
+clean_text_udf = udf(clean_text, StringType())
+
 def main():
     spark = create_spark_session()
     spark.sparkContext.setLogLevel("WARN")
@@ -43,17 +78,12 @@ def main():
     # Transform to Silver
     silver_df = bronze_df \
         .dropDuplicates(["comment_id"]) \
-        .withColumn("text_cleaned", 
-            regexp_replace(
-                regexp_replace(lower(col("text")), r"http\S+|www.\S+", ""),
-                r"[^a-zA-Z0-9\s]", ""
-            )
-        ) \
-        .withColumn("text_cleaned", regexp_replace(col("text_cleaned"), r"\s+", " ")) \
+        .withColumn("text_cleaned", clean_text_udf(col("text"))) \
         .withColumn("text_length", length(col("text_cleaned"))) \
         .withColumn("has_url", contains_url_udf(col("text"))) \
         .withColumn("published_at", to_timestamp(col("published_at"))) \
-        .withColumn("language", lower(regexp_replace(col("author"), r".*", "en"))) \
+        .withColumn("fetched_at", to_timestamp(col("fetched_at"))) \
+        .withColumn("language", lit("en")) \
         .withColumn("processed_at", current_timestamp()) \
         .select(
             "comment_id",
