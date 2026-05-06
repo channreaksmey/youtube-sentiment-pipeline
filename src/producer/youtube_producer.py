@@ -2,11 +2,30 @@ import os
 import json
 import time
 import logging
+import random
 from datetime import datetime
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from kafka import KafkaProducer
 from dotenv import load_dotenv
+
+SEARCH_QUERIES = [
+    "technology review",
+    "soulsborne games",
+    "smartphone unboxing",
+    "true crime",
+    "programming tutorial",
+    "movie review",
+    "music video",
+    "cooking tutorial",
+    "unsoved mysteries",
+    "travel vlog",
+    "elden ring lore",  
+    "science explained",
+    "vlogbrothers",
+    "book review",
+    "boiler room"
+]
 
 # Setup logging
 logging.basicConfig(
@@ -32,18 +51,30 @@ class YouTubeKafkaProducer:
         )
         logger.info(f"Connected to Kafka at {KAFKA_BROKER}")
 
-    def search_videos(self, query="technology review", max_results=3):
-        """Search for popular videos by query."""
+    def search_videos(self, query=None, max_results=5):
+
+        # Pick random query if none provided
+        if query is None:
+            query = random.choice(SEARCH_QUERIES)
+    
+        # Add randomization to bust cache
+        random_suffix = random.choice(["", " latest", " 2026", " new", " trending"])
+        search_query = f"{query}{random_suffix}"
+    
+        logger.info(f"Searching for: '{search_query}'")
+    
         try:
             response = self.youtube.search().list(
-                q=query,
+                q=search_query,
                 part="id,snippet",
                 type="video",
-                order="viewCount",
+                order="relevance",  # You changed this
                 maxResults=max_results,
-                videoEmbeddable="true"
+                videoEmbeddable="true",
+                # Add publishedAfter to get recent videos only
+                publishedAfter="2026-01-01T00:00:00Z"
             ).execute()
-            
+        
             videos = []
             for item in response.get("items", []):
                 video = {
@@ -53,10 +84,10 @@ class YouTubeKafkaProducer:
                     "published_at": item["snippet"]["publishedAt"]
                 }
                 videos.append(video)
-                logger.info(f"Found video: {video['title'][:60]}...")
-            
+                logger.info(f"Found: {video['title'][:60]}...")
+        
             return videos
-            
+        
         except HttpError as e:
             logger.error(f"YouTube API error: {e}")
             return []
@@ -111,35 +142,34 @@ class YouTubeKafkaProducer:
             logger.error(f"Failed to send comment to Kafka: {e}")
             return False
 
-    def stream_comments(self, query="technology review", videos_per_batch=2, comments_per_video=50):
-        """Main loop: search videos, fetch comments, stream to Kafka."""
-        logger.info(f"Starting comment stream for query: '{query}'")
-        
+    def stream_comments(self, query=None, videos_per_batch=5, comments_per_video=100):
+        logger.info(f"Starting comment stream (query: {query or 'random'})")
+    
         while True:
             try:
-                # Search for videos
-                videos = self.search_videos(query, max_results=videos_per_batch)
-                
+                # Use provided query or random
+                current_query = query or random.choice(SEARCH_QUERIES)
+            
+                videos = self.search_videos(current_query, max_results=videos_per_batch)
+            
                 for video in videos:
-                    # Fetch comments
                     comments = self.fetch_comments(video["video_id"], comments_per_video)
-                    
-                    # Stream to Kafka
+                
                     for comment in comments:
                         self.send_to_kafka(comment)
-                        time.sleep(0.1)  # Small delay between messages
-                    
-                    logger.info(f"Streamed {len(comments)} comments from: {video['title'][:50]}")
-                    time.sleep(2)  # Pause between videos
+                        time.sleep(0.05)  # Faster sending
                 
-                logger.info(f"Batch complete. Waiting before next search...")
-                time.sleep(30)  # Wait 30 seconds between batches
-                
+                    logger.info(f"Streamed {len(comments)} from: {video['title'][:50]}")
+                    time.sleep(1)
+            
+                logger.info(f"Batch done. Total videos this batch: {len(videos)}")
+                time.sleep(20)  # Shorter wait between batches
+            
             except KeyboardInterrupt:
-                logger.info("Shutting down producer...")
+                logger.info("Shutting down...")
                 break
             except Exception as e:
-                logger.error(f"Unexpected error: {e}")
+                logger.error(f"Error: {e}")
                 time.sleep(10)
 
     def close(self):
@@ -151,11 +181,10 @@ class YouTubeKafkaProducer:
 if __name__ == "__main__":
     producer = YouTubeKafkaProducer()
     try:
-        # Stream comments indefinitely
         producer.stream_comments(
-            query="vaatividya",
-            videos_per_batch=2,
-            comments_per_video=50
+            query=None,              # Random queries
+            videos_per_batch=10,      # 10 videos per batch
+            comments_per_video=50   # 50 comments each
         )
     except KeyboardInterrupt:
         print("\nStopped by user")
