@@ -30,6 +30,12 @@ YouTube Data API v3
          │
          ▼
 ┌─────────────────┐
+│   Pentaho PDI   │  ← Batch ETL Aggregation
+│   (Docker)      │     Silver → daily_video_stats
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
 │   Streamlit     │  ← Interactive Dashboard
 │   Dashboard     │     Real-time KPIs & visualizations
 └─────────────────┘
@@ -42,7 +48,7 @@ YouTube Data API v3
 | Data Source | YouTube Data API v3 |
 | Message Broker | Apache Kafka |
 | Streaming Ingestion | Python + kafka-python |
-| Batch Processing | PySpark |
+| Batch Processing | PySpark + Pentaho PDI |
 | Data Warehouse | PostgreSQL |
 | ML Inference | Hugging Face Transformers (distilbert) |
 | Dashboard | Streamlit + Plotly |
@@ -60,11 +66,11 @@ YouTube Data API v3
 ### 1. Clone & Setup
 
 ```bash
-git clone <your-repo-url>
+git clone git@github.com:channreaksmey/youtube-sentiment-pipeline.git
 cd youtube-sentiment-pipeline
 
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
 # venv\\Scripts\\activate  # Windows
 
 pip install -r requirements.txt
@@ -89,6 +95,7 @@ This starts:
 - **Kafka** on port 9092
 - **Zookeeper** on port 2181
 - **PostgreSQL** on port 5432
+- **Pentaho PDI** on port 8080
 
 ### 4. Run the Pipeline
 
@@ -126,7 +133,15 @@ python src/spark/silver_to_gold_hf.py
 
 Builds star schema and scores sentiment using Hugging Face distilbert model.
 
-#### Terminal 5: Dashboard
+#### Terminal 5: Pentaho Batch Aggregation
+
+```bash
+python pentaho/run_pentaho_batch.py
+```
+
+Aggregates Silver data to daily video statistics (replicates Pentaho PDI transformation).
+
+#### Terminal 6: Dashboard
 
 ```bash
 streamlit run src/dashboard/app.py
@@ -206,6 +221,30 @@ Opens interactive dashboard at `http://localhost:8501`.
 - Confidence threshold: model output score
 - Neutral assigned to low-confidence predictions
 
+### Pentaho Batch ETL (`pentaho/run_pentaho_batch.py`)
+
+Replicates a Pentaho PDI transformation (`silver_to_gold.ktr`):
+
+**Steps:**
+1. **Table Input**: Reads `silver_comments` from PostgreSQL
+2. **Group By**: Aggregates by `video_id` and `DATE(published_at)`
+3. **Calculator**: Computes `total_comments`, `avg_likes`, `avg_length`, `url_count`
+4. **Table Output**: Writes to `daily_video_stats`
+
+**Docker Service:**
+```yaml
+pentaho:
+  image: hiromuhota/webspoon:latest
+  container_name: pentaho
+  ports:
+    - "8080:8080"
+  volumes:
+    - ./pentaho:/pentaho-jobs
+```
+
+**KTR Generator:**
+`pentaho/generate_ktr.py` creates a valid Pentaho `.ktr` XML file programmatically.
+
 ### Dashboard (`src/dashboard/app.py`)
 
 **Features:**
@@ -227,6 +266,7 @@ Opens interactive dashboard at `http://localhost:8501`.
 | Bronze | ~1,700+ | `data/bronze/comments` | Parquet |
 | Silver | ~1,680 (after dedup) | PostgreSQL | SQL |
 | Gold | ~1,680 | PostgreSQL | Star Schema |
+| Pentaho Aggregate | ~8-10 rows | PostgreSQL | daily_video_stats |
 
 ---
 
@@ -240,21 +280,26 @@ youtube-sentiment-pipeline/
 │   ├── bronze/                       # Raw Parquet files (gitignored)
 │   ├── silver/                       # Intermediate (gitignored)
 │   └── checkpoints/                  # Spark checkpoints (gitignored)
+├── pentaho/
+│   ├── generate_ktr.py               # Generates .ktr XML file
+│   ├── run_pentaho_batch.py          # Python simulation of Pentaho job
+│   └── README.md                     # Pentaho documentation
 ├── src/
 │   ├── producer/
 │   │   ├── youtube_producer.py       # YouTube API → Kafka
 │   │   ├── test_api.py               # API connectivity test
+│   │   ├── verify_kafka.py           # Kafka message checker
 │   │   └── kafka_check.py            # Quick Kafka diagnostic
 │   ├── spark/
 │   │   ├── bronze_batch.py           # Kafka → Bronze Parquet
 │   │   ├── bronze_to_silver.py       # Bronze → Silver PostgreSQL
 │   │   ├── silver_to_gold_hf.py      # Silver → Gold Star Schema + ML
-│   │   └── silver_to_gold.py         # Silver → Gold Star Schema + Rule-based 
+│   │   └── silver_to_gold.py         # Silver → Gold (rule-based fallback)
 │   └── dashboard/
 │       └── app.py                    # Streamlit dashboard
-├── docker-compose.yml                # Kafka + Zookeeper + PostgreSQL
+├── docker-compose.yml                # All infrastructure
 ├── requirements.txt                  # Python dependencies
-└── README.md                         
+└── README.md                         # This file
 ```
 
 ---
@@ -311,14 +356,22 @@ YouTube Data API v3 free tier: **10,000 quota units/day**
 | Comment threads | 1 unit | ~10,000 calls |
 
 **Typical usage:**
-- 10 video searches: 1000 units
+- 10 video searches: 1,000 units
 - 50 comments per video: 10 videos × 1 call each (50 comments fits in 1 call)
 - **Total per batch: ~1,010 units**
 - **Max batches/day: ~9 batches**
 
-
 ---
 
+## Future Enhancements
+
+- [ ] Fine-tune distilbert on YouTube-specific comments
+- [ ] Implement real-time streaming with Spark Structured Streaming
+- [ ] Add Apache Airflow for pipeline orchestration
+- [ ] Deploy to cloud (AWS/GCP)
+- [ ] Add user authentication to dashboard
+
+---
 
 ## Acknowledgments
 
@@ -326,4 +379,4 @@ YouTube Data API v3 free tier: **10,000 quota units/day**
 - Hugging Face Transformers library
 - Apache Spark & Kafka communities
 - Streamlit for dashboard framework
-
+- Pentaho Data Integration by Hitachi Vantara
