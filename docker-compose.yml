@@ -32,5 +32,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  pentaho-spoon:
+    image: hiromuhota/webspoon:latest
+    container_name: pentaho
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Xms1024m -Xmx2048m
+    depends_on:
+      - postgres
+    networks:
+      - default
+      
+networks:
+  default:
+    driver: bridge
+
 volumes:
   postgres_data:
