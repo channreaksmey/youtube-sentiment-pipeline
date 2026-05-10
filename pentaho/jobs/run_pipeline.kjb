@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<job>
+  <name>youtube_sentiment_pipeline</name>
+  <description>Automated YouTube Sentiment Pipeline</description>
+  <extended_description>
+    Orchestrates the full pipeline:
+    1. Run Producer (Python)
+    2. Run Bronze (PySpark)
+    3. Run Silver (PySpark)
+    4. Run Gold (PySpark + HF)
+    5. Run Pentaho Aggregation (.ktr)
+  </extended_description>
+  <job_version>1.0</job_version>
+  <directory>/</directory>
+  <created_user>-</created_user>
+  <created_date>2026/05/06 00:00:00</created_date>
+  <modified_user>-</modified_user>
+  <modified_date>2026/05/06 00:00:00</modified_date>
+  
+  <!-- Database connection -->
+  <connection>
+    <name>youtube_dw</name>
+    <server>postgres</server>
+    <type>POSTGRESQL</type>
+    <access>Native</access>
+    <database>youtube_dw</database>
+    <port>5432</port>
+    <username>de_user</username>
+    <password>de_pass</password>
+  </connection>
+  
+  <!-- Job entries (steps) -->
+  <entries>
+    
+    <!-- Start -->
+    <entry>
+      <name>START</name>
+      <description/>
+      <type>SPECIAL</type>
+      <start>Y</start>
+      <dummy>N</dummy>
+      <repeat>N</repeat>
+      <schedulerType>0</schedulerType>
+      <intervalSeconds>0</intervalSeconds>
+      <intervalMinutes>60</intervalMinutes>
+      <hour>12</hour>
+      <minutes>0</minutes>
+      <weekDay>1</weekDay>
+      <DayOfMonth>1</DayOfMonth>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>50</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+    <!-- Step 1: Run Producer -->
+    <entry>
+      <name>Run Producer</name>
+      <description>Stream YouTube comments to Kafka</description>
+      <type>SHELL</type>
+      <filename/>
+      <work_directory>/pipeline-src/producer</work_directory>
+      <arg_from_previous>N</arg_from_previous>
+      <exec_per_row>N</exec_per_row>
+      <set_logfile>N</set_logfile>
+      <logfile/>
+      <set_append_logfile>N</set_append_logfile>
+      <logext/>
+      <add_date>N</add_date>
+      <add_time>N</add_time>
+      <insertScript>N</insertScript>
+      <script>#!/bin/bash
+# Activate virtual environment and run producer for 2 minutes
+cd /pipeline-src/producer
+timeout 120 python youtube_producer.py || true
+echo "Producer completed"
+</script>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>200</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+    <!-- Step 2: Run Bronze -->
+    <entry>
+      <name>Run Bronze</name>
+      <description>Kafka → Bronze Parquet</description>
+      <type>SHELL</type>
+      <filename/>
+      <work_directory>/pipeline-src/spark</work_directory>
+      <arg_from_previous>N</arg_from_previous>
+      <exec_per_row>N</exec_per_row>
+      <set_logfile>N</set_logfile>
+      <logfile/>
+      <set_append_logfile>N</set_append_logfile>
+      <logext/>
+      <add_date>N</add_date>
+      <add_time>N</add_time>
+      <insertScript>N</insertScript>
+      <script>#!/bin/bash
+cd /pipeline-src/spark
+python bronze_batch.py
+echo "Bronze completed"
+</script>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>350</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+    <!-- Step 3: Run Silver -->
+    <entry>
+      <name>Run Silver</name>
+      <description>Bronze → Silver PostgreSQL</description>
+      <type>SHELL</type>
+      <filename/>
+      <work_directory>/pipeline-src/spark</work_directory>
+      <arg_from_previous>N</arg_from_previous>
+      <exec_per_row>N</exec_per_row>
+      <set_logfile>N</set_logfile>
+      <logfile/>
+      <set_append_logfile>N</set_append_logfile>
+      <logext/>
+      <add_date>N</add_date>
+      <add_time>N</add_time>
+      <insertScript>N</insertScript>
+      <script>#!/bin/bash
+cd /pipeline-src/spark
+python bronze_to_silver.py
+echo "Silver completed"
+</script>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>500</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+    <!-- Step 4: Run Gold -->
+    <entry>
+      <name>Run Gold</name>
+      <description>Silver → Gold Star Schema + HF Sentiment</description>
+      <type>SHELL</type>
+      <filename/>
+      <work_directory>/pipeline-src/spark</work_directory>
+      <arg_from_previous>N</arg_from_previous>
+      <exec_per_row>N</exec_per_row>
+      <set_logfile>N</set_logfile>
+      <logfile/>
+      <set_append_logfile>N</set_append_logfile>
+      <logext/>
+      <add_date>N</add_date>
+      <add_time>N</add_time>
+      <insertScript>N</insertScript>
+      <script>#!/bin/bash
+cd /pipeline-src/spark
+python silver_to_gold_hf.py
+echo "Gold completed"
+</script>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>650</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+    <!-- Step 5: Run Pentaho Aggregation -->
+    <entry>
+      <name>Run Pentaho Aggregation</name>
+      <description>Silver → daily_video_stats</description>
+      <type>TRANS</type>
+      <filename>/pentaho-jobs/silver_to_gold.ktr</filename>
+      <transname/>
+      <arg_from_previous>N</arg_from_previous>
+      <params_from_previous>N</params_from_previous>
+      <exec_per_row>N</exec_per_row>
+      <clear_rows>N</clear_rows>
+      <clear_files>N</clear_files>
+      <set_logfile>N</set_logfile>
+      <logfile/>
+      <set_append_logfile>N</set_append_logfile>
+      <create_parent_folder>N</create_parent_folder>
+      <logging_remote_work>N</logging_remote_work>
+      <run_configuration/>
+      <parameters>
+        <pass_all_parameters>Y</pass_all_parameters>
+      </parameters>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>800</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+    <!-- Success -->
+    <entry>
+      <name>Success</name>
+      <description>Pipeline completed successfully</description>
+      <type>SUCCESS</type>
+      <parallel>N</parallel>
+      <nr>0</nr>
+      <xloc>950</xloc>
+      <yloc>50</yloc>
+      <attributes/>
+    </entry>
+    
+  </entries>
+  
+  <!-- Hops (connections between steps) -->
+  <hops>
+    <hop>
+      <from>START</from>
+      <to>Run Producer</to>
+      <from_nr>0</from_nr>
+      <to_nr>0</to_nr>
+      <enabled>Y</enabled>
+      <evaluation>Y</evaluation>
+      <unconditional>Y</unconditional>
+    </hop>
+    <hop>
+      <from>Run Producer</from>
+      <to>Run Bronze</to>
+      <from_nr>0</from_nr>
+      <to_nr>0</to_nr>
+      <enabled>Y</enabled>
+      <evaluation>Y</evaluation>
+      <unconditional>N</unconditional>
+    </hop>
+    <hop>
+      <from>Run Bronze</from>
+      <to>Run Silver</to>
+      <from_nr>0</from_nr>
+      <to_nr>0</to_nr>
+      <enabled>Y</enabled>
+      <evaluation>Y</evaluation>
+      <unconditional>N</unconditional>
+    </hop>
+    <hop>
+      <from>Run Silver</from>
+      <to>Run Gold</to>
+      <from_nr>0</from_nr>
+      <to_nr>0</to_nr>
+      <enabled>Y</enabled>
+      <evaluation>Y</evaluation>
+      <unconditional>N</unconditional>
+    </hop>
+    <hop>
+      <from>Run Gold</from>
+      <to>Run Pentaho Aggregation</to>
+      <from_nr>0</from_nr>
+      <to_nr>0</to_nr>
+      <enabled>Y</enabled>
+      <evaluation>Y</evaluation>
+      <unconditional>N</unconditional>
+    </hop>
+    <hop>
+      <from>Run Pentaho Aggregation</from>
+      <to>Success</to>
+      <from_nr>0</from_nr>
+      <to_nr>0</to_nr>
+      <enabled>Y</enabled>
+      <evaluation>Y</evaluation>
+      <unconditional>N</unconditional>
+    </hop>
+  </hops>
+  
+  <notepads>
+  </notepads>
+  
+  <attributes>
+  </attributes>
+  
+</job>
