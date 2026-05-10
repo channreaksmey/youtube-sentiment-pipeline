@@ -70,3 +70,11 @@ pentaho/*.kjb
 !pentaho/run_pentaho_batch.py
 !pentaho/README.md
 !pentaho/Dockerfile
+# Pentaho generated files
+pentaho/jobs/*.ktr
+pentaho/jobs/*.kjb
+!pentaho/jobs/silver_to_gold.ktr
+!pentaho/jobs/run_pipeline.kjb
+
+# Pentaho logs
+pentaho/logs/

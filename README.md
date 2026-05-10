@@ -30,8 +30,8 @@ YouTube Data API v3
          │
          ▼
 ┌─────────────────┐
-│   Pentaho PDI   │  ← Batch ETL Aggregation
-│   (Docker)      │     Silver → daily_video_stats
+│  Pentaho PDI    │  ← Batch ETL Orchestration
+│  (.kjb + .ktr)  │     Silver → daily_video_stats
 └────────┬────────┘
          │
          ▼
@@ -66,12 +66,12 @@ YouTube Data API v3
 ### 1. Clone & Setup
 
 ```bash
-git clone git@github.com:channreaksmey/youtube-sentiment-pipeline.git
+git clone <your-repo-url>
 cd youtube-sentiment-pipeline
 
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# venv\\Scripts\\activate  # Windows
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# venv\Scripts\activate  # Windows
 
 pip install -r requirements.txt
 ```
@@ -95,51 +95,40 @@ This starts:
 - **Kafka** on port 9092
 - **Zookeeper** on port 2181
 - **PostgreSQL** on port 5432
-- **Pentaho PDI** on port 8080
 
 ### 4. Run the Pipeline
 
-Execute in order:
-
-#### Terminal 1: Ingest Comments (1-2 minutes)
+#### Option A: Full Automation (Recommended)
 
 ```bash
+python run_pipeline.py
+```
+
+Runs all steps automatically:
+1. Producer (2 minutes of ingestion)
+2. Bronze Layer
+3. Silver Layer
+4. Gold Layer
+5. Pentaho Aggregation
+
+#### Option B: Manual Step-by-Step
+
+```bash
+# Terminal 1: Ingest Comments (2 minutes)
 python src/producer/youtube_producer.py
-```
 
-Searches YouTube for trending videos and streams comments to Kafka.
-
-#### Terminal 2: Bronze Layer
-
-```bash
+# Terminal 2: Bronze Layer
 python src/spark/bronze_batch.py
-```
 
-Reads all messages from Kafka and writes raw data to Parquet.
-
-#### Terminal 3: Silver Layer
-
-```bash
+# Terminal 3: Silver Layer
 python src/spark/bronze_to_silver.py
-```
 
-Cleans text (HTML decoding, URL removal, deduplication) and writes to PostgreSQL.
-
-#### Terminal 4: Gold Layer
-
-```bash
+# Terminal 4: Gold Layer
 python src/spark/silver_to_gold_hf.py
-```
 
-Builds star schema and scores sentiment using Hugging Face distilbert model.
-
-#### Terminal 5: Pentaho Batch Aggregation
-
-```bash
+# Terminal 5: Pentaho Aggregation
 python pentaho/run_pentaho_batch.py
 ```
-
-Aggregates Silver data to daily video statistics (replicates Pentaho PDI transformation).
 
 #### Terminal 6: Dashboard
 
@@ -231,19 +220,16 @@ Replicates a Pentaho PDI transformation (`silver_to_gold.ktr`):
 3. **Calculator**: Computes `total_comments`, `avg_likes`, `avg_length`, `url_count`
 4. **Table Output**: Writes to `daily_video_stats`
 
-**Docker Service:**
-```yaml
-pentaho:
-  image: hiromuhota/webspoon:latest
-  container_name: pentaho
-  ports:
-    - "8080:8080"
-  volumes:
-    - ./pentaho:/pentaho-jobs
+**Job Orchestration (`run_pipeline.kjb`):**
+```
+START → Run Producer → Run Bronze → Run Silver → Run Gold → Run Pentaho Aggregation → Success
 ```
 
-**KTR Generator:**
-`pentaho/generate_ktr.py` creates a valid Pentaho `.ktr` XML file programmatically.
+**Files:**
+- `pentaho/jobs/run_pipeline.kjb` — Master orchestration job (XML)
+- `pentaho/jobs/silver_to_gold.ktr` — Aggregation transformation (XML)
+- `pentaho/run_pentaho_batch.py` — Python implementation of the transformation
+- `run_pipeline.py` — Python orchestrator (equivalent to `kitchen.sh`)
 
 ### Dashboard (`src/dashboard/app.py`)
 
@@ -281,6 +267,9 @@ youtube-sentiment-pipeline/
 │   ├── silver/                       # Intermediate (gitignored)
 │   └── checkpoints/                  # Spark checkpoints (gitignored)
 ├── pentaho/
+│   ├── jobs/
+│   │   ├── run_pipeline.kjb          # Pentaho job orchestration
+│   │   └── silver_to_gold.ktr        # Pentaho transformation
 │   ├── generate_ktr.py               # Generates .ktr XML file
 │   ├── run_pentaho_batch.py          # Python simulation of Pentaho job
 │   └── README.md                     # Pentaho documentation
@@ -299,6 +288,7 @@ youtube-sentiment-pipeline/
 │       └── app.py                    # Streamlit dashboard
 ├── docker-compose.yml                # All infrastructure
 ├── requirements.txt                  # Python dependencies
+├── run_pipeline.py                   # Python orchestrator (equivalent to kitchen.sh)
 └── README.md                         # This file
 ```
 
@@ -360,6 +350,32 @@ YouTube Data API v3 free tier: **10,000 quota units/day**
 - 50 comments per video: 10 videos × 1 call each (50 comments fits in 1 call)
 - **Total per batch: ~1,010 units**
 - **Max batches/day: ~9 batches**
+
+---
+
+## Pentaho PDI Notes
+
+### Why Python Orchestrator?
+
+The `run_pipeline.py` script is equivalent to running:
+```bash
+/opt/pentaho-pdi/kitchen.sh -file=jobs/run_pipeline.kjb
+```
+
+**Reasons for Python approach:**
+- Pentaho PDI download availability issues (SourceForge redirects)
+- ARM64 Mac compatibility (official images are AMD64)
+- Faster iteration during development
+- Same Kafka/PostgreSQL targets
+
+**Production would use:**
+```bash
+# Build custom Pentaho image
+docker build -t pentaho-pdi ./pentaho/
+
+# Run job
+docker run pentaho-pdi kitchen.sh -file=/pentaho-jobs/run_pipeline.kjb
+```
 
 ---
 

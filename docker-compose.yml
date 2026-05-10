@@ -1,8 +1,9 @@
-# docker-compose.yml
+version: '3.8'
 
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.3
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -10,7 +11,8 @@ services:
       - "2181:2181"
 
   kafka:
-    image: confluentinc/cp-kafka:7.5.3
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
     depends_on:
       - zookeeper
     ports:
@@ -20,9 +22,11 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: postgres
     environment:
       POSTGRES_USER: de_user
       POSTGRES_PASSWORD: de_pass
@@ -32,21 +36,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  pentaho-spoon:
-    image: hiromuhota/webspoon:latest
-    container_name: pentaho
-    ports:
-      - "8080:8080"
+  # Full Pentaho PDI with pan.sh and kitchen.sh
+  pentaho:
+    image: wmarinho/pentaho-data-integration:9.1.0.0-324
+    container_name: pentaho-pdi
+    volumes:
+      - ./pentaho/jobs:/pentaho-jobs
+      - ./src:/pipeline-src
     environment:
-      - JAVA_OPTS=-Xms1024m -Xmx2048m
+      - PENTAHO_DI_JAVA_OPTIONS=-Xms2048m -Xmx4096m
     depends_on:
       - postgres
-    networks:
-      - default
-      
-networks:
-  default:
-    driver: bridge
 
 volumes:
   postgres_data:
+
+networks:
+  default:
+    driver: bridge
