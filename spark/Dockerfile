@@ -1,24 +1,25 @@
-FROM ubuntu:22.04
+FROM apache/spark:3.5.0
 
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
-    SPARK_VERSION=4.1.2 \
-    SPARK_HOME=/opt/spark \
-    PATH=$PATH:/opt/spark/bin
+USER root
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-21-jre-headless \
-    wget \
-    bash \
-    && rm -rf /var/lib/apt/lists/*
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-RUN wget -q https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz && \
-    tar -xzf spark-${SPARK_VERSION}-bin-hadoop3.tgz -C /opt && \
-    mv /opt/spark-${SPARK_VERSION}-bin-hadoop3 /opt/spark && \
-    rm spark-${SPARK_VERSION}-bin-hadoop3.tgz && \
-    mkdir -p /opt/spark/logs
+# Upgrade pip first for better dependency resolution
+RUN pip install --no-cache-dir --upgrade pip
 
-WORKDIR /opt/spark
+# Install Torch separately as it is the largest dependency
+# This helps with caching and identifying failures
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-EXPOSE 8080 7077 4040
+# Install the rest of the dependencies
+RUN pip install --no-cache-dir \
+    python-dotenv \
+    transformers \
+    pandas \
+    pyarrow \
+    sqlalchemy \
+    psycopg2-binary
 
-CMD ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+USER spark

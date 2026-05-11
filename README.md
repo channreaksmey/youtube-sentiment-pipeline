@@ -69,11 +69,8 @@ YouTube Data API v3
 git clone <your-repo-url>
 cd youtube-sentiment-pipeline
 
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate  # Windows
-
-pip install -r requirements.txt
+# Use uv for lightning-fast setup
+uv sync
 ```
 
 ### 2. Configure API Keys
@@ -91,49 +88,44 @@ HF_TOKEN=your_huggingface_token_here  # optional
 docker-compose up -d
 ```
 
-This starts:
-- **Kafka** on port 9092
-- **Zookeeper** on port 2181
-- **PostgreSQL** on port 5432
-
 ### 4. Run the Pipeline
 
 #### Option A: Full Automation (Recommended)
 
 ```bash
-python run_pipeline.py
+uv run run_pipeline.py
 ```
 
 Runs all steps automatically:
 1. Producer (2 minutes of ingestion)
 2. Bronze Layer
 3. Silver Layer
-4. Gold Layer
+4. Gold Layer (Emotion Detection)
 5. Pentaho Aggregation
 
 #### Option B: Manual Step-by-Step
 
 ```bash
 # Terminal 1: Ingest Comments (2 minutes)
-python src/producer/youtube_producer.py
+uv run src/producer/youtube_producer.py
 
 # Terminal 2: Bronze Layer
-python src/spark/bronze_batch.py
+uv run src/spark/bronze_batch.py
 
 # Terminal 3: Silver Layer
-python src/spark/bronze_to_silver.py
+uv run src/spark/bronze_to_silver.py
 
-# Terminal 4: Gold Layer
-python src/spark/silver_to_gold_hf.py
+# Terminal 4: Gold Layer (Emotion Detection)
+uv run src/spark/gold_emotion_pipeline.py
 
 # Terminal 5: Pentaho Aggregation
-python pentaho/run_pentaho_batch.py
+uv run pentaho/run_pentaho_batch.py
 ```
 
 #### Terminal 6: Dashboard
 
 ```bash
-streamlit run src/dashboard/app.py
+uv run streamlit run src/dashboard/app.py
 ```
 
 Opens interactive dashboard at `http://localhost:8501`.

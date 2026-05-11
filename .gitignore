@@ -29,8 +29,8 @@ htmlcov/
 
 # Environment and secrets
 .env
-.env.*
-!.env.example
+# .env.*
+# !.env.example
 
 # Logs and runtime artifacts
 *.log
@@ -78,3 +78,6 @@ pentaho/jobs/*.kjb
 
 # Pentaho logs
 pentaho/logs/
+
+.ivy2/
+data/

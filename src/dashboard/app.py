@@ -40,8 +40,8 @@ df = df.merge(silver_comments, on="comment_id", how="left")
 if "author_name" in df.columns and "author" not in df.columns:
     df = df.rename(columns={"author_name": "author"})
 
-st.title("YouTube Sentiment Analytics")
-st.markdown("Powered by Rule-based Sentiment Analysis")
+st.title("YouTube Sentiment & Emotion Analytics")
+st.markdown("Powered by Advanced Transformer Models (Emotion Detection)")
 
 # KPIs
 col1, col2, col3, col4 = st.columns(4)
@@ -49,46 +49,53 @@ with col1:
     st.metric("Total Comments", len(df))
 with col2:
     pos = (df["sentiment_label"] == "positive").sum()
-    st.metric("Positive", pos, f"{pos/len(df)*100:.1f}%")
+    st.metric("Positive Sentiment", pos, f"{pos/len(df)*100:.1f}%")
 with col3:
-    # Rule-based might not have 'neutral' if not specifically handled, but it is in our script
-    neu = (df["sentiment_label"] == "neutral").sum()
-    st.metric("Neutral", neu, f"{neu/len(df)*100:.1f}%")
+    if "emotion_label" in df.columns:
+        top_emotion = df["emotion_label"].mode()[0] if not df["emotion_label"].empty else "N/A"
+        st.metric("Dominant Emotion", top_emotion.capitalize())
+    else:
+        st.metric("Dominant Emotion", "N/A (Run Pipeline)")
 with col4:
     neg = (df["sentiment_label"] == "negative").sum()
-    st.metric("Negative", neg, f"{neg/len(df)*100:.1f}%")
+    st.metric("Negative Sentiment", neg, f"{neg/len(df)*100:.1f}%")
 
 # Row 1
 left, right = st.columns(2)
 
 with left:
+    st.subheader("Emotion Distribution")
+    if "emotion_label" in df.columns:
+        emotion_counts = df["emotion_label"].value_counts().reset_index()
+        emotion_counts.columns = ["emotion", "count"]
+        fig = px.pie(emotion_counts, names="emotion", values="count", hole=0.3, 
+                     color="emotion", color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Emotion data not found. Please run the updated pipeline.")
+
+with right:
     st.subheader("Sentiment Over Time")
     time_sent = df.groupby(["hour", "sentiment_label"]).size().reset_index(name="count")
     fig = px.line(time_sent, x="hour", y="count", color="sentiment_label")
-    st.plotly_chart(fig, width='stretch')
-
-with right:
-    st.subheader("Confidence Distribution")
-    fig = px.histogram(df, x="confidence", color="sentiment_label", nbins=20)
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
 # Row 2
 left, right = st.columns(2)
 
 with left:
-    st.subheader("Sentiment by Video")
-    vid_sent = df.groupby(["video_id", "sentiment_label"]).size().reset_index(name="count")
-    fig = px.bar(vid_sent, x="video_id", y="count", color="sentiment_label")
-    st.plotly_chart(fig, width='stretch')
+    st.subheader("Emotion by Video")
+    if "emotion_label" in df.columns:
+        vid_emo = df.groupby(["video_id", "emotion_label"]).size().reset_index(name="count")
+        fig = px.bar(vid_emo, x="video_id", y="count", color="emotion_label", barmode="group")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Run the pipeline to see emotion breakdown by video.")
 
 with right:
-    st.subheader("Top Authors by Sentiment")
-    # `dim_author` uses column name `author`, ensure we reference that
-    auth_sent = df.groupby(["author", "sentiment_label"]).size().reset_index(name="count")
-    top_authors = auth_sent.groupby("author")["count"].sum().nlargest(10).index
-    fig = px.bar(auth_sent[auth_sent["author"].isin(top_authors)], 
-                 x="author", y="count", color="sentiment_label")
-    st.plotly_chart(fig, width='stretch')
+    st.subheader("Confidence Distribution")
+    fig = px.histogram(df, x="confidence", color="sentiment_label", nbins=20)
+    st.plotly_chart(fig, use_container_width=True)
 
 # Row 3: Confidence analysis
 st.subheader("Model Confidence Analysis")
