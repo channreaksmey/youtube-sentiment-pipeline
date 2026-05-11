@@ -45,7 +45,8 @@ def main():
     print(f"Started: {datetime.now()}")
     
     steps = [
-        ("Producer", "python src/producer/youtube_producer.py", 120),
+        # ("Producer", "python src/producer/youtube_producer.py", 120),
+        ("Producer Simulator", "python src/producer/youtube_simulator.py", 10),
         ("Bronze", "python src/spark/bronze_batch.py", None),
         ("Silver", "python src/spark/bronze_to_silver.py", None),
         ("Gold", "python src/spark/silver_to_gold.py", None),
@@ -53,8 +54,8 @@ def main():
     ]
     
     for name, command, duration in steps:
-        if name == "Producer" and duration:
-            print(f"\nRunning producer for {duration} seconds...")
+        if "Producer" in name and duration:
+            print(f"\nRunning {name} for {duration} seconds...")
             proc = subprocess.Popen(command, shell=True)
             time.sleep(duration)
             proc.terminate()
