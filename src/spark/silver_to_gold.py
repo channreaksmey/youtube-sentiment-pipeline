@@ -1,3 +1,5 @@
+import os
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, hour, dayofweek, month, year, weekofyear,
@@ -5,8 +7,10 @@ from pyspark.sql.functions import (
     monotonically_increasing_id, lit
 )
 
-# PostgreSQL config
-JDBC_URL = "jdbc:postgresql://localhost:5432/youtube_dw"
+# Configuration
+IS_DOCKER = os.path.exists("/.dockerenv") or os.environ.get("SPARK_HOME") is not None
+POSTGRES_HOST = "postgres" if IS_DOCKER else "localhost"
+JDBC_URL = f"jdbc:postgresql://{POSTGRES_HOST}:5432/youtube_dw"
 DB_PROPERTIES = {
     "user": "de_user",
     "password": "de_pass",

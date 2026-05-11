@@ -36,8 +36,12 @@ df = df.merge(dim_author, on="author_sk", how="left")
 # Merge in the original cleaned text if available
 df = df.merge(silver_comments, on="comment_id", how="left")
 
+# Handle column name differences between HF and Rule-based Gold layers
+if "author_name" in df.columns and "author" not in df.columns:
+    df = df.rename(columns={"author_name": "author"})
+
 st.title("YouTube Sentiment Analytics")
-st.markdown("Powered by Hugging Face distilbert sentiment analysis")
+st.markdown("Powered by Rule-based Sentiment Analysis")
 
 # KPIs
 col1, col2, col3, col4 = st.columns(4)
@@ -47,6 +51,7 @@ with col2:
     pos = (df["sentiment_label"] == "positive").sum()
     st.metric("Positive", pos, f"{pos/len(df)*100:.1f}%")
 with col3:
+    # Rule-based might not have 'neutral' if not specifically handled, but it is in our script
     neu = (df["sentiment_label"] == "neutral").sum()
     st.metric("Neutral", neu, f"{neu/len(df)*100:.1f}%")
 with col4:
@@ -103,4 +108,4 @@ high_conf = df[df["confidence"] > 0.95][["text_cleaned", "sentiment_label", "con
 st.dataframe(high_conf)
 
 st.markdown("---")
-st.markdown("Built with PySpark + Kafka + Hugging Face + PostgreSQL + Streamlit")
+st.markdown("Built with PySpark + Kafka + PostgreSQL + Streamlit")

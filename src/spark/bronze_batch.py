@@ -1,10 +1,15 @@
+import os
+import sys
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, from_json, current_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 
-KAFKA_BROKER = "localhost:9092"
+# Configuration
+IS_DOCKER = os.path.exists("/.dockerenv") or os.environ.get("SPARK_HOME") is not None
+KAFKA_HOST = "kafka" if IS_DOCKER else "localhost"
+KAFKA_BROKER = f"{KAFKA_HOST}:9092"
 KAFKA_TOPIC = "raw-youtube-comments"
-BRONZE_PATH = "data/bronze/comments"
+BRONZE_PATH = "/opt/bitnami/spark/app/data/bronze/comments" if IS_DOCKER else "data/bronze/comments"
 
 schema = StructType([
     StructField("comment_id", StringType(), True),

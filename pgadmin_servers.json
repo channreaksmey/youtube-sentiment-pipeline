@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "youtube_dw",
+      "Group": "Servers",
+      "Port": 5432,
+      "Username": "de_user",
+      "Password": "de_pass",
+      "Host": "postgres",
+      "SSLMode": "prefer",
+      "MaintenanceDB": "youtube_dw"
+    }
+  }
+}

@@ -10,8 +10,14 @@ from transformers import pipeline
 import os
 from dotenv import load_dotenv
 
-# Load HF token from .env
-load_dotenv("config/.env")
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+# Set it for Hugging Face
+if HF_TOKEN:
+    os.environ["HF_TOKEN"] = HF_TOKEN
+    print("HF_TOKEN loaded from config")
+else:
+    print("Warning: No HF_TOKEN found. Using unauthenticated requests.")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # Set it for Hugging Face

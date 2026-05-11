@@ -34,11 +34,26 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
 
-  # Full Pentaho PDI with pan.sh and kitchen.sh
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: datacource@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: datacource123
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin_servers.json:/pgadmin4/servers.json
+    depends_on:
+      - postgres
+
   pentaho:
-    image: wmarinho/pentaho-data-integration:9.1.0.0-324
+    build:
+      context: ./pentaho
+      dockerfile: Dockerfile
     container_name: pentaho-pdi
     volumes:
       - ./pentaho/jobs:/pentaho-jobs
@@ -48,8 +63,28 @@ services:
     depends_on:
       - postgres
 
+  spark:
+    image: hiromuhota/webspoon:latest
+    container_name: spark
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/home/webspoon/data
+
+  spark-worker:
+    image: hiromuhota/webspoon:latest
+    container_name: spark-worker
+    ports:
+      - "8081:8080"
+    volumes:
+      - .:/home/webspoon/data
+    depends_on:
+      - spark
+
 volumes:
   postgres_data:
+  pg_data:
+  pgadmin_data:
 
 networks:
   default:

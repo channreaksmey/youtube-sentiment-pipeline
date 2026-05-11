@@ -379,6 +379,34 @@ docker run pentaho-pdi kitchen.sh -file=/pentaho-jobs/run_pipeline.kjb
 
 ---
 
+## Postman
+
+Check API
+
+```bash
+curl -X GET "http://localhost:8000/"
+```
+
+Run Pipline
+
+```bash
+curl -X POST "http://localhost:8000/pipeline/run"
+```
+
+Check Pipeline Status
+```bash
+curl -X GET "http://localhost:8000/pipeline/status"
+```
+
+View Logs
+
+```bash
+curl -X GET "http://localhost:8000/pipeline/logs"
+```
+
+
+---
+
 ## Future Enhancements
 
 - [ ] Fine-tune distilbert on YouTube-specific comments

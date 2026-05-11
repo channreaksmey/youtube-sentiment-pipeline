@@ -6,6 +6,7 @@ Equivalent to running: kitchen.sh -file=run_pipeline.kjb
 import subprocess
 import sys
 import time
+import os
 from datetime import datetime
 
 def run_step(name, command, cwd="."):
@@ -14,6 +15,13 @@ def run_step(name, command, cwd="."):
     print(f"Started: {datetime.now()}")
     print('='*60)
     
+    # Check if we should run via docker exec for spark jobs
+    if "src/spark/" in command and "python" in command:
+        script_path = command.split(" ")[-1]
+        docker_path = f"/opt/bitnami/spark/app/{script_path}"
+        command = f"docker exec -t spark spark-submit {docker_path}"
+        print(f"Executing in Docker: {command}")
+
     try:
         result = subprocess.run(
             command,
@@ -31,8 +39,7 @@ def run_step(name, command, cwd="."):
 
 def main():
     print("="*60)
-    print("YOUTUBE SENTIMENT PIPELINE")
-    print("Equivalent to: kitchen.sh -file=run_pipeline.kjb")
+    print("YOUTUBE SENTIMENT PIPELINE (DOCKER SPARK)")
     print("="*60)
     print(f"Started: {datetime.now()}")
     
@@ -40,7 +47,7 @@ def main():
         ("Producer", "python src/producer/youtube_producer.py", 120),
         ("Bronze", "python src/spark/bronze_batch.py", None),
         ("Silver", "python src/spark/bronze_to_silver.py", None),
-        ("Gold", "python src/spark/silver_to_gold_hf.py", None),
+        ("Gold", "python src/spark/silver_to_gold.py", None),
         ("Pentaho Aggregation", "python pentaho/run_pentaho_batch.py", None),
     ]
     
