@@ -6,14 +6,21 @@ USER root
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Upgrade pip first for better dependency resolution
+# Ensure spark home is writable and exists
+RUN mkdir -p /home/spark && chown -R spark:spark /home/spark
+
+# Set cache directories to writable locations
+ENV TRANSFORMERS_CACHE=/tmp/huggingface
+ENV HF_HOME=/tmp/huggingface
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
+# Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip
 
-# Install Torch separately as it is the largest dependency
-# This helps with caching and identifying failures
+# Install Torch CPU
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install the rest of the dependencies
+# Install other dependencies
 RUN pip install --no-cache-dir \
     python-dotenv \
     transformers \
@@ -21,5 +28,8 @@ RUN pip install --no-cache-dir \
     pyarrow \
     sqlalchemy \
     psycopg2-binary
+
+# Create the cache directory and ensure it's writable
+RUN mkdir -p /tmp/huggingface && chown -R spark:spark /tmp/huggingface
 
 USER spark
