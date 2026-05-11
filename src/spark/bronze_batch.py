@@ -9,7 +9,7 @@ IS_DOCKER = os.path.exists("/.dockerenv") or os.environ.get("SPARK_HOME") is not
 KAFKA_HOST = "kafka" if IS_DOCKER else "localhost"
 KAFKA_BROKER = f"{KAFKA_HOST}:9092"
 KAFKA_TOPIC = "raw-youtube-comments"
-BRONZE_PATH = "/opt/bitnami/spark/app/data/bronze/comments" if IS_DOCKER else "data/bronze/comments"
+BRONZE_PATH = "/opt/spark/work-dir/data/bronze/comments" if IS_DOCKER else "data/bronze/comments"
 
 schema = StructType([
     StructField("comment_id", StringType(), True),

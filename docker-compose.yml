@@ -64,22 +64,28 @@ services:
       - postgres
 
   spark:
-    image: hiromuhota/webspoon:latest
+    image: apache/spark:3.5.0
     container_name: spark
+    environment:
+      - SPARK_MODE=master
+    volumes:
+      - .:/opt/spark/work-dir
     ports:
       - "8080:8080"
-    volumes:
-      - .:/home/webspoon/data
+      - "7077:7077"
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
 
   spark-worker:
-    image: hiromuhota/webspoon:latest
+    image: apache/spark:3.5.0
     container_name: spark-worker
-    ports:
-      - "8081:8080"
+    environment:
+      - SPARK_MODE=worker
     volumes:
-      - .:/home/webspoon/data
+      - .:/opt/spark/work-dir
     depends_on:
       - spark
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark:7077"]
+
 
 volumes:
   postgres_data:

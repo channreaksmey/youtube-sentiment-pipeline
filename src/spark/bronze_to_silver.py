@@ -16,7 +16,7 @@ DB_PROPERTIES = {
     "driver": "org.postgresql.Driver"
 }
 
-BRONZE_PATH = "/opt/bitnami/spark/app/data/bronze/comments" if IS_DOCKER else "data/bronze/comments"
+BRONZE_PATH = "/opt/spark/work-dir/data/bronze/comments" if IS_DOCKER else "data/bronze/comments"
 
 def create_spark_session():
     return SparkSession.builder \

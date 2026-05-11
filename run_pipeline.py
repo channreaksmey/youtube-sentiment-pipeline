@@ -18,8 +18,9 @@ def run_step(name, command, cwd="."):
     # Check if we should run via docker exec for spark jobs
     if "src/spark/" in command and "python" in command:
         script_path = command.split(" ")[-1]
-        docker_path = f"/opt/bitnami/spark/app/{script_path}"
-        command = f"docker exec -t spark spark-submit {docker_path}"
+        docker_path = f"/opt/spark/work-dir/{script_path}"
+        # Use full path to spark-submit just in case
+        command = f"docker exec -t spark /opt/spark/bin/spark-submit {docker_path}"
         print(f"Executing in Docker: {command}")
 
     try:
