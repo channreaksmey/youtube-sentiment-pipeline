@@ -1,11 +1,15 @@
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-import subprocess
-import os
 import sys
-from datetime import datetime
+import os
 import logging
-from typing import Dict, Optional, List
-import uuid
+from typing import List, Optional, Dict
+from datetime import datetime
+from pydantic import BaseModel
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
+
+# Ensure project root is in sys.path
+sys.path.append(os.getcwd())
+
+from src.utils.orchestrator import PipelineOrchestrator
 
 # Setup logging
 logging.basicConfig(
@@ -16,129 +20,70 @@ logger = logging.getLogger("pipeline-api")
 
 app = FastAPI(
     title="YouTube Sentiment Pipeline API",
-    description="API to orchestrate the YouTube comment sentiment ETL pipeline"
+    description="Refactored API to orchestrate the YouTube comment sentiment ETL pipeline with persistent job tracking."
 )
 
-# Configuration
-ORCHESTRATOR_PATH = "run_pipeline.py"
+orchestrator = PipelineOrchestrator()
 
-# In-memory state tracking
-class PipelineState:
-    def __init__(self):
-        self.is_running = False
-        self.current_job_id: Optional[str] = None
-        self.history: List[Dict] = []
-        self.last_logs: str = ""
-
-state = PipelineState()
-
-def run_pipeline_task(job_id: str):
-    state.is_running = True
-    state.current_job_id = job_id
-    
-    start_time = datetime.now()
-    job_info = {
-        "job_id": job_id,
-        "start_time": start_time,
-        "status": "running",
-        "end_time": None,
-        "error": None
-    }
-    state.history.append(job_info)
-    
-    logger.info(f"Job {job_id}: Pipeline execution started")
-    
-    try:
-        # Run the orchestrator script
-        # We capture output to store in state.last_logs
-        result = subprocess.run(
-            [sys.executable, ORCHESTRATOR_PATH],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        state.last_logs = result.stdout
-        job_info["status"] = "completed"
-        logger.info(f"Job {job_id}: Pipeline execution completed successfully")
-        
-    except subprocess.CalledProcessError as e:
-        state.last_logs = f"STDOUT:\n{e.stdout}\n\nSTDERR:\n{e.stderr}"
-        job_info["status"] = "failed"
-        job_info["error"] = str(e.stderr)
-        logger.error(f"Job {job_id}: Pipeline execution failed: {e.stderr}")
-        
-    except Exception as e:
-        state.last_logs = str(e)
-        job_info["status"] = "error"
-        job_info["error"] = str(e)
-        logger.error(f"Job {job_id}: An unexpected error occurred: {e}")
-        
-    finally:
-        job_info["end_time"] = datetime.now()
-        state.is_running = False
-        state.current_job_id = None
+class JobCreate(BaseModel):
+    steps: Optional[List[str]] = None  # If None, run all steps
 
 @app.get("/")
 async def root():
     return {
         "message": "YouTube Sentiment Pipeline API",
         "status": "online",
-        "pipeline_running": state.is_running,
+        "available_steps": list(orchestrator.steps_config.keys()),
         "timestamp": datetime.now()
     }
 
-@app.post("/pipeline/run", status_code=202)
-async def trigger_pipeline(background_tasks: BackgroundTasks):
+@app.post("/jobs", status_code=202)
+async def trigger_job(job_data: JobCreate, background_tasks: BackgroundTasks):
     """
-    Triggers the full pipeline in the background.
+    Triggers a pipeline job with the specified steps (or all steps).
     """
-    if state.is_running:
-        raise HTTPException(
-            status_code=409, 
-            detail=f"Pipeline is already running (Job ID: {state.current_job_id})"
-        )
+    all_steps = list(orchestrator.steps_config.keys())
+    steps_to_run = job_data.steps if job_data.steps else all_steps
     
-    job_id = str(uuid.uuid4())[:8]
-    background_tasks.add_task(run_pipeline_task, job_id)
+    # Validate steps
+    for step in steps_to_run:
+        if step not in orchestrator.steps_config:
+            raise HTTPException(status_code=400, detail=f"Invalid step: {step}")
+    
+    job_id = orchestrator.create_job(steps_to_run)
+    background_tasks.add_task(orchestrator.run_full_job, job_id, steps_to_run)
     
     return {
         "job_id": job_id,
         "status": "accepted",
-        "message": "Pipeline triggered successfully",
-        "estimated_duration": "Approx 3-5 minutes"
+        "steps": steps_to_run,
+        "message": "Job triggered successfully"
     }
 
-@app.get("/pipeline/status")
-async def get_status():
+@app.get("/jobs")
+async def list_jobs(limit: int = Query(10, ge=1, le=50)):
     """
-    Returns the current status of the pipeline and the last few jobs.
+    Returns a list of recent jobs.
     """
-    return {
-        "is_running": state.is_running,
-        "current_job_id": state.current_job_id,
-        "recent_history": state.history[-5:] if state.history else []
-    }
+    return {"jobs": orchestrator.list_jobs(limit)}
 
-@app.get("/pipeline/logs")
-async def get_logs():
+@app.get("/jobs/{job_id}")
+async def get_job_status(job_id: str):
     """
-    Returns the logs from the last execution.
+    Returns the full status and logs for a specific job.
     """
-    if not state.last_logs:
-        return {"message": "No logs available yet. Run the pipeline first."}
-    return {"logs": state.last_logs}
+    job = orchestrator.get_job_status(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
-@app.get("/pipeline/history")
-async def get_history():
+@app.get("/steps")
+async def list_steps():
     """
-    Returns the full execution history.
+    Returns a list of all available pipeline steps.
     """
-    return {"history": state.history}
+    return {"steps": list(orchestrator.steps_config.keys())}
 
 if __name__ == "__main__":
     import uvicorn
-    # Check if run_pipeline.py exists in the current directory
-    if not os.path.exists(ORCHESTRATOR_PATH):
-        logger.error(f"Could not find orchestrator at {ORCHESTRATOR_PATH}. Make sure you run this from the project root.")
-    
     uvicorn.run(app, host="0.0.0.0", port=8000)

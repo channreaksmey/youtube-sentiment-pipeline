@@ -80,6 +80,16 @@ TABLES = {
             confidence NUMERIC,
             like_count INTEGER
         )
+    """,
+    "pipeline_jobs": """
+        CREATE TABLE IF NOT EXISTS pipeline_jobs (
+            job_id VARCHAR(255) PRIMARY KEY,
+            steps TEXT,
+            status VARCHAR(50),
+            start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            end_time TIMESTAMP,
+            logs TEXT
+        )
     """
 }
 
