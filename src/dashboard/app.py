@@ -70,7 +70,7 @@ with left:
         emotion_counts.columns = ["emotion", "count"]
         fig = px.pie(emotion_counts, names="emotion", values="count", hole=0.3, 
                      color="emotion", color_discrete_sequence=px.colors.qualitative.Pastel)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.warning("Emotion data not found. Please run the updated pipeline.")
 
@@ -78,7 +78,7 @@ with right:
     st.subheader("Sentiment Over Time")
     time_sent = df.groupby(["hour", "sentiment_label"]).size().reset_index(name="count")
     fig = px.line(time_sent, x="hour", y="count", color="sentiment_label")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # Row 2
 left, right = st.columns(2)
@@ -88,14 +88,14 @@ with left:
     if "emotion_label" in df.columns:
         vid_emo = df.groupby(["video_id", "emotion_label"]).size().reset_index(name="count")
         fig = px.bar(vid_emo, x="video_id", y="count", color="emotion_label", barmode="group")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("Run the pipeline to see emotion breakdown by video.")
 
 with right:
     st.subheader("Confidence Distribution")
     fig = px.histogram(df, x="confidence", color="sentiment_label", nbins=20)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # Row 3: Confidence analysis
 st.subheader("Model Confidence Analysis")
