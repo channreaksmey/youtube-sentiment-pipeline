@@ -1,0 +1,182 @@
+{
+	"info": {
+		"_postman_id": "8d3e2a1b-4f5c-4d6e-9a8b-7c6d5e4f3a2b",
+		"name": "YouTube Sentiment Pipeline",
+		"description": "API to orchestrate the YouTube comment sentiment ETL pipeline with persistent job tracking and resource-limited Spark jobs.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "System",
+			"item": [
+				{
+					"name": "Get API Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								""
+							]
+						},
+						"description": "Returns the basic status of the API and list of available steps."
+					},
+					"response": []
+				},
+				{
+					"name": "List Available Steps",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/steps",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"steps"
+							]
+						},
+						"description": "Returns a list of all valid pipeline step names."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Jobs",
+			"item": [
+				{
+					"name": "Trigger Full Pipeline",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"steps\": null\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"jobs"
+							]
+						},
+						"description": "Triggers all pipeline steps in sequence."
+					},
+					"response": []
+				},
+				{
+					"name": "Trigger Partial Pipeline",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"steps\": [\n        \"Database Setup\",\n        \"Producer Simulator\",\n        \"Bronze\"\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"jobs"
+							]
+						},
+						"description": "Triggers only the specified steps in the sequence provided."
+					},
+					"response": []
+				},
+				{
+					"name": "List Job History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/jobs?limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"jobs"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Returns a list of recent pipeline jobs and their high-level status."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Job Details & Logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/jobs/:job_id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"jobs",
+								":job_id"
+							],
+							"variable": [
+								{
+									"key": "job_id",
+									"value": "ca2bffff",
+									"description": "The 8-character job ID returned when triggering a job."
+								}
+							]
+						},
+						"description": "Returns full details for a specific job, including the execution logs."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}
