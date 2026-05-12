@@ -34,6 +34,10 @@ TABLES = {
             text_length INTEGER,
             has_url BOOLEAN,
             language VARCHAR(10),
+            sentiment_label VARCHAR(20),
+            sentiment_score NUMERIC,
+            emotion_label VARCHAR(20),
+            emotion_score NUMERIC,
             fetched_at TIMESTAMP,
             processed_at TIMESTAMP
         )

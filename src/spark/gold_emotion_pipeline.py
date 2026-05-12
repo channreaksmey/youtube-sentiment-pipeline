@@ -4,18 +4,8 @@ from pyspark.sql.functions import (
     when, count, avg, max as spark_max,
     monotonically_increasing_id, lit
 )
-from pyspark.sql.types import StructType, StructField, StringType, FloatType
-
 from src.utils.spark import get_spark_session
 from src.utils.db import read_postgres, write_postgres
-from src.nlp.emotion_analyzer import analyze_emotions_partition
-
-# Schema for the NLP output
-EMOTION_SCHEMA = StructType([
-    StructField("comment_id", StringType(), True),
-    StructField("emotion_label", StringType(), True),
-    StructField("emotion_score", FloatType(), True)
-])
 
 def create_dimensions(silver_df):
     """Builds Star Schema dimensions from Silver data."""
@@ -57,10 +47,10 @@ def main():
     spark = get_spark_session("YouTubeGoldEmotion")
     
     print("=" * 60)
-    print("GOLD LAYER: EMOTION & SENTIMENT PIPELINE")
+    print("GOLD LAYER: STAR SCHEMA AGGREGATION")
     print("=" * 60)
     
-    # 1. Read Silver data
+    # 1. Read Silver data (now contains pre-calculated NLP scores)
     print("\nReading Silver data from PostgreSQL...")
     silver_df = read_postgres(spark, "silver_comments")
     
@@ -71,42 +61,16 @@ def main():
         print("No data in Silver layer. Run Bronze/Silver first.")
         return
 
-    # 2. Run Optimized NLP (Emotion Analysis)
-    print(f"\nRunning Advanced Emotion Analysis via mapInPandas...")
-    # Select only required columns for the NLP task to minimize data transfer
-    nlp_input = silver_df.select("comment_id", "text_cleaned")
+    # 2. Build dimensions
+    dim_time, dim_video, dim_author = create_dimensions(silver_df)
     
-    # This executes on workers, loading model once per partition
-    emotion_results = nlp_input.mapInPandas(analyze_emotions_partition, schema=EMOTION_SCHEMA)
+    # 3. Build fact table
+    print("\nBuilding fact_sentiment using pre-calculated scores...")
     
-    # 3. Join NLP results back to main dataframe
-    scored_df = silver_df.join(emotion_results, "comment_id", "left")
-    
-    # 4. Add derived sentiment (simple logic based on emotion if needed, 
-    # or keep it separate. For now, we use emotion as the primary metric)
-    scored_df = scored_df.withColumn(
-        "sentiment_label",
-        when(col("emotion_label").isin(["joy", "surprise"]), "positive")
-        .when(col("emotion_label").isin(["anger", "disgust", "fear", "sadness"]), "negative")
-        .otherwise("neutral")
-    )
-
-    # 5. Build dimensions
-    dim_time, dim_video, dim_author = create_dimensions(scored_df)
-    
-    # 6. Build fact table
-    print("\nBuilding fact_sentiment...")
-    
-    # Alias DataFrames to avoid ambiguity during joins
-    df_scored = scored_df.alias("scored")
-    df_time = dim_time.alias("time")
-    df_video = dim_video.alias("video")
-    df_author = dim_author.alias("author")
-    
-    fact = df_scored \
-        .join(df_time, col("scored.published_at") == col("time.time_value"), "left") \
-        .join(df_video, col("scored.video_id") == col("video.video_id"), "left") \
-        .join(df_author, col("scored.author") == col("author.author_name"), "left") \
+    fact = silver_df.alias("scored") \
+        .join(dim_time.alias("time"), col("scored.published_at") == col("time.time_value"), "left") \
+        .join(dim_video.alias("video"), col("scored.video_id") == col("video.video_id"), "left") \
+        .join(dim_author.alias("author"), col("scored.author") == col("author.author_name"), "left") \
         .select(
             monotonically_increasing_id().alias("sentiment_sk"),
             col("scored.comment_id"),
@@ -114,14 +78,14 @@ def main():
             col("video.video_sk"),
             col("author.author_sk"),
             col("scored.sentiment_label"),
+            col("scored.sentiment_score"),
             col("scored.emotion_label"),
             col("scored.emotion_score").alias("confidence"),
             col("scored.like_count")
         )
     
-    # 7. Write to Gold
+    # 4. Write to Gold
     print("\nWriting Gold layer to PostgreSQL...")
-    # Order matters if foreign keys are enforced (though here they are not yet)
     write_postgres(fact, "fact_sentiment")
     write_postgres(dim_time, "dim_time")
     write_postgres(dim_video, "dim_video")
@@ -130,10 +94,6 @@ def main():
     print("\n" + "=" * 60)
     print("GOLD LAYER COMPLETE")
     print("=" * 60)
-    
-    # Quick statistics
-    print("\nEmotion Distribution:")
-    fact.groupBy("emotion_label").count().orderBy(col("count").desc()).show()
     
     spark.stop()
 

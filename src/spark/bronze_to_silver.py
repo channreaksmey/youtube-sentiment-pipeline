@@ -1,12 +1,14 @@
 import os
 import re
 import html
+import pandas as pd
 from pyspark.sql.functions import col, length, when, to_timestamp, current_timestamp, udf, lit
-from pyspark.sql.types import BooleanType, StringType
+from pyspark.sql.types import BooleanType, StringType, StructType, StructField, FloatType
 
 from src.utils.spark import get_spark_session
 from src.utils.db import write_postgres
 from src.utils.config import BRONZE_PATH
+from src.nlp.emotion_analyzer import analyze_emotions_partition
 
 # UDF to detect URLs
 def contains_url(text):
@@ -36,6 +38,13 @@ def clean_text(text):
 
 clean_text_udf = udf(clean_text, StringType())
 
+# Schema for the NLP output
+NLP_SCHEMA = StructType([
+    StructField("comment_id", StringType(), True),
+    StructField("emotion_label", StringType(), True),
+    StructField("emotion_score", FloatType(), True)
+])
+
 def main():
     spark = get_spark_session("YouTubeCommentsSilver")
     
@@ -47,8 +56,9 @@ def main():
     
     print(f"Bronze records: {bronze_df.count()}")
     
-    # Transform to Silver
-    silver_df = bronze_df \
+    # 1. Basic Cleaning and Transformation
+    print("Cleaning text and formatting fields...")
+    silver_base = bronze_df \
         .dropDuplicates(["comment_id"]) \
         .withColumn("text_cleaned", clean_text_udf(col("text"))) \
         .withColumn("text_length", length(col("text_cleaned"))) \
@@ -56,20 +66,42 @@ def main():
         .withColumn("published_at", to_timestamp(col("published_at"))) \
         .withColumn("fetched_at", to_timestamp(col("fetched_at"))) \
         .withColumn("language", lit("en")) \
-        .withColumn("processed_at", current_timestamp()) \
+        .withColumn("processed_at", current_timestamp())
+    
+    # 2. Run NLP (Emotion Analysis)
+    print("Running NLP Emotion Analysis...")
+    nlp_input = silver_base.select("comment_id", "text_cleaned")
+    nlp_results = nlp_input.mapInPandas(analyze_emotions_partition, schema=NLP_SCHEMA)
+    
+    # 3. Join NLP results and add Sentiment Label
+    print("Finalizing Silver schema...")
+    silver_df = silver_base.join(nlp_results, "comment_id", "left") \
+        .withColumn(
+            "sentiment_label",
+            when(col("emotion_label").isin(["joy", "surprise"]), "positive")
+            .when(col("emotion_label").isin(["anger", "disgust", "fear", "sadness"]), "negative")
+            .otherwise("neutral")
+        ) \
+        .withColumn(
+            "sentiment_score",
+            when(col("sentiment_label") == "positive", col("emotion_score"))
+            .when(col("sentiment_label") == "negative", -col("emotion_score"))
+            .otherwise(lit(0.0))
+        ) \
         .select(
             "comment_id", "video_id", "author", "text", "text_cleaned",
             "published_at", "like_count", "text_length", "has_url",
-            "language", "fetched_at", "processed_at"
+            "language", "sentiment_label", "sentiment_score", 
+            "emotion_label", "emotion_score", "fetched_at", "processed_at"
         )
     
-    print(f"Silver records after dedup: {silver_df.count()}")
+    print(f"Silver records after processing: {silver_df.count()}")
     
     # Write to PostgreSQL
     print("Writing to PostgreSQL (silver_comments)...")
     write_postgres(silver_df, "silver_comments")
     
-    print("Silver layer written successfully!")
+    print("Silver layer with NLP augmentation complete!")
     spark.stop()
 
 if __name__ == "__main__":

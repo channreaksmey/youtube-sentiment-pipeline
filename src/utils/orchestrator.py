@@ -102,11 +102,24 @@ class PipelineOrchestrator:
             duration = config.get("duration", 10)
             output += f"Running {name} for {duration} seconds...\n"
             try:
+                # Use a separate process group if possible, but on Windows taskkill /T is easier
                 proc = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 time.sleep(duration)
-                proc.terminate()
-                stdout, stderr = proc.communicate()
-                output += stdout + stderr
+                
+                # Robust termination for Windows
+                if os.name == 'nt':
+                    subprocess.run(f"taskkill /F /T /PID {proc.pid}", shell=True, capture_output=True)
+                else:
+                    proc.terminate()
+                
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                    output += stdout + stderr
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                    output += stdout + stderr
+                
                 output += f"Producer stopped\n"
                 return output
             except Exception as e:
