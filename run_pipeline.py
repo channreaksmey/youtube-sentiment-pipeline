@@ -1,68 +1,47 @@
 """
-Pipeline Orchestrator
-Equivalent to running: kitchen.sh -file=run_pipeline.kjb
+Pipeline Orchestrator (CLI Wrapper)
+Usage: python run_pipeline.py [--steps step1,step2]
 """
 
-import subprocess
 import sys
-import time
-from datetime import datetime
-
-def run_step(name, command, cwd="."):
-    print(f"\n{'='*60}")
-    print(f"STEP: {name}")
-    print(f"Started: {datetime.now()}")
-    print('='*60)
-    
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=cwd,
-            check=True,
-            capture_output=False,
-            text=True
-        )
-        print(f"{name} completed")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"{name} failed: {e}")
-        return False
+import argparse
+from src.utils.orchestrator import PipelineOrchestrator
 
 def main():
-    print("="*60)
-    print("YOUTUBE SENTIMENT PIPELINE")
-    print("Equivalent to: kitchen.sh -file=run_pipeline.kjb")
-    print("="*60)
-    print(f"Started: {datetime.now()}")
-    
-    steps = [
-        ("Producer", "python src/producer/youtube_producer.py", 120),
-        ("Bronze", "python src/spark/bronze_batch.py", None),
-        ("Silver", "python src/spark/bronze_to_silver.py", None),
-        ("Gold", "python src/spark/silver_to_gold_hf.py", None),
-        ("Pentaho Aggregation", "python pentaho/run_pentaho_batch.py", None),
-    ]
-    
-    for name, command, duration in steps:
-        if name == "Producer" and duration:
-            print(f"\nRunning producer for {duration} seconds...")
-            proc = subprocess.Popen(command, shell=True)
-            time.sleep(duration)
-            proc.terminate()
-            proc.wait()
-            print(f"Producer stopped")
-        else:
-            success = run_step(name, command)
-            if not success:
-                print(f"\nPipeline failed at: {name}")
+    parser = argparse.ArgumentParser(description="YouTube Sentiment Pipeline CLI")
+    parser.add_argument("--steps", help="Comma-separated list of steps to run", type=str)
+    args = parser.parse_args()
+
+    orchestrator = PipelineOrchestrator()
+    all_available_steps = list(orchestrator.steps_config.keys())
+
+    if args.steps:
+        steps_to_run = [s.strip() for s in args.steps.split(",")]
+        # Basic validation
+        for s in steps_to_run:
+            if s not in all_available_steps:
+                print(f"Error: Step '{s}' is not available.")
+                print(f"Available steps: {all_available_steps}")
                 sys.exit(1)
+    else:
+        steps_to_run = all_available_steps
+
+    print(f"Starting Pipeline Job with steps: {steps_to_run}")
+    job_id = orchestrator.create_job(steps_to_run)
+    print(f"Job ID: {job_id}")
     
+    orchestrator.run_full_job(job_id, steps_to_run)
+    
+    job = orchestrator.get_job_status(job_id)
     print("\n" + "="*60)
-    print("PIPELINE COMPLETE")
+    print(f"JOB STATUS: {job['status']}")
     print("="*60)
-    print(f"Finished: {datetime.now()}")
-    print("\nRun dashboard: streamlit run src/dashboard/app.py")
+    
+    if job["status"] == "failed":
+        print("\nSee logs for details.")
+        sys.exit(1)
+    else:
+        print("\nPipeline completed successfully.")
 
 if __name__ == "__main__":
     main()

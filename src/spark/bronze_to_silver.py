@@ -1,24 +1,14 @@
-import html
+import os
 import re
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lower, regexp_replace, length, when, to_timestamp, current_timestamp, udf, lit
-from pyspark.sql.types import BooleanType, StringType
+import html
+import pandas as pd
+from pyspark.sql.functions import col, length, when, to_timestamp, current_timestamp, udf, lit
+from pyspark.sql.types import BooleanType, StringType, StructType, StructField, FloatType
 
-# PostgreSQL config
-JDBC_URL = "jdbc:postgresql://localhost:5432/youtube_dw"
-DB_PROPERTIES = {
-    "user": "de_user",
-    "password": "de_pass",
-    "driver": "org.postgresql.Driver"
-}
-
-BRONZE_PATH = "data/bronze/comments"
-
-def create_spark_session():
-    return SparkSession.builder \
-        .appName("YouTubeCommentsSilver") \
-        .config("spark.jars", "https://jdbc.postgresql.org/download/postgresql-42.7.3.jar") \
-        .getOrCreate()
+from src.utils.spark import get_spark_session
+from src.utils.db import write_postgres
+from src.utils.config import BRONZE_PATH
+from src.nlp.emotion_analyzer import analyze_emotions_partition
 
 # UDF to detect URLs
 def contains_url(text):
@@ -32,51 +22,43 @@ contains_url_udf = udf(contains_url, BooleanType())
 def clean_text(text):
     """
     Properly clean YouTube comment text:
-    1. Decode HTML entities (&#39; → ', &quot; → ", etc.)
-    2. Remove HTML tags (<a href...>, <br>, etc.)
+    1. Decode HTML entities
+    2. Remove HTML tags
     3. Remove URLs
     4. Remove extra whitespace
     """
     if text is None:
         return ""
-    
-    # Step 1: Decode HTML entities
-    # haven39t -> haven't (&#39; is apostrophe)
     text = html.unescape(text)
-    
-    # Step 2: Remove HTML tags
     text = re.sub(r'<[^>]+>', ' ', text)
-    
-    # Step 3: Remove URLs
     text = re.sub(r'http\S+|www.\S+|https\S+', '', text, flags=re.IGNORECASE)
-    
-    # Step 4: Remove @mentions and hashtags for cleaner text
     text = re.sub(r'@\w+|#\w+', '', text)
-    
-    # Step 5: Remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Step 6: Lowercase
-    text = text.lower()
-    
-    return text
+    return text.lower()
 
-# Register as UDF
 clean_text_udf = udf(clean_text, StringType())
 
+# Schema for the NLP output
+NLP_SCHEMA = StructType([
+    StructField("comment_id", StringType(), True),
+    StructField("emotion_label", StringType(), True),
+    StructField("emotion_score", FloatType(), True)
+])
+
 def main():
-    spark = create_spark_session()
-    spark.sparkContext.setLogLevel("WARN")
+    spark = get_spark_session("YouTubeCommentsSilver")
     
     print("Reading Bronze data...")
+    if not os.path.exists(BRONZE_PATH) and not BRONZE_PATH.startswith("/opt"):
+         print(f"Bronze path {BRONZE_PATH} not found locally.")
     
-    # Read all Bronze Parquet files
     bronze_df = spark.read.parquet(BRONZE_PATH)
     
     print(f"Bronze records: {bronze_df.count()}")
     
-    # Transform to Silver
-    silver_df = bronze_df \
+    # 1. Basic Cleaning and Transformation
+    print("Cleaning text and formatting fields...")
+    silver_base = bronze_df \
         .dropDuplicates(["comment_id"]) \
         .withColumn("text_cleaned", clean_text_udf(col("text"))) \
         .withColumn("text_length", length(col("text_cleaned"))) \
@@ -84,35 +66,43 @@ def main():
         .withColumn("published_at", to_timestamp(col("published_at"))) \
         .withColumn("fetched_at", to_timestamp(col("fetched_at"))) \
         .withColumn("language", lit("en")) \
-        .withColumn("processed_at", current_timestamp()) \
+        .withColumn("processed_at", current_timestamp())
+    
+    # 2. Run NLP (Emotion Analysis)
+    print("Running NLP Emotion Analysis...")
+    nlp_input = silver_base.select("comment_id", "text_cleaned")
+    nlp_results = nlp_input.mapInPandas(analyze_emotions_partition, schema=NLP_SCHEMA)
+    
+    # 3. Join NLP results and add Sentiment Label
+    print("Finalizing Silver schema...")
+    silver_df = silver_base.join(nlp_results, "comment_id", "left") \
+        .withColumn(
+            "sentiment_label",
+            when(col("emotion_label").isin(["joy", "surprise"]), "positive")
+            .when(col("emotion_label").isin(["anger", "disgust", "fear", "sadness"]), "negative")
+            .otherwise("neutral")
+        ) \
+        .withColumn(
+            "sentiment_score",
+            when(col("sentiment_label") == "positive", col("emotion_score"))
+            .when(col("sentiment_label") == "negative", -col("emotion_score"))
+            .otherwise(lit(0.0))
+        ) \
         .select(
-            "comment_id",
-            "video_id",
-            "author",
-            "text",
-            "text_cleaned",
-            "published_at",
-            "like_count",
-            "text_length",
-            "has_url",
-            "language",
-            "fetched_at",
-            "processed_at"
+            "comment_id", "video_id", "author", "text", "text_cleaned",
+            "published_at", "like_count", "text_length", "has_url",
+            "language", "sentiment_label", "sentiment_score", 
+            "emotion_label", "emotion_score", "fetched_at", "processed_at"
         )
     
-    print(f"Silver records after dedup: {silver_df.count()}")
-    print("\nSample Silver data:")
-    silver_df.show(5, truncate=False)
+    print(f"Silver records after processing: {silver_df.count()}")
     
     # Write to PostgreSQL
-    print("Writing to PostgreSQL...")
-    silver_df.write \
-        .jdbc(url=JDBC_URL, table="silver_comments", mode="overwrite", properties=DB_PROPERTIES)
+    print("Writing to PostgreSQL (silver_comments)...")
+    write_postgres(silver_df, "silver_comments")
     
-    print("Silver layer written successfully!")
-    
-    # Show table stats
-    silver_df.groupBy("video_id").count().orderBy(col("count").desc()).show(10)
+    print("Silver layer with NLP augmentation complete!")
+    spark.stop()
 
 if __name__ == "__main__":
     main()

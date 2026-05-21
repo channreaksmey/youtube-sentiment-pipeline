@@ -36,8 +36,12 @@ df = df.merge(dim_author, on="author_sk", how="left")
 # Merge in the original cleaned text if available
 df = df.merge(silver_comments, on="comment_id", how="left")
 
-st.title("YouTube Sentiment Analytics")
-st.markdown("Powered by Hugging Face distilbert sentiment analysis")
+# Handle column name differences between HF and Rule-based Gold layers
+if "author_name" in df.columns and "author" not in df.columns:
+    df = df.rename(columns={"author_name": "author"})
+
+st.title("YouTube Sentiment & Emotion Analytics")
+st.markdown("Powered by Advanced Transformer Models (Emotion Detection)")
 
 # KPIs
 col1, col2, col3, col4 = st.columns(4)
@@ -45,44 +49,52 @@ with col1:
     st.metric("Total Comments", len(df))
 with col2:
     pos = (df["sentiment_label"] == "positive").sum()
-    st.metric("Positive", pos, f"{pos/len(df)*100:.1f}%")
+    st.metric("Positive Sentiment", pos, f"{pos/len(df)*100:.1f}%")
 with col3:
-    neu = (df["sentiment_label"] == "neutral").sum()
-    st.metric("Neutral", neu, f"{neu/len(df)*100:.1f}%")
+    if "emotion_label" in df.columns:
+        top_emotion = df["emotion_label"].mode()[0] if not df["emotion_label"].empty else "N/A"
+        st.metric("Dominant Emotion", top_emotion.capitalize())
+    else:
+        st.metric("Dominant Emotion", "N/A (Run Pipeline)")
 with col4:
     neg = (df["sentiment_label"] == "negative").sum()
-    st.metric("Negative", neg, f"{neg/len(df)*100:.1f}%")
+    st.metric("Negative Sentiment", neg, f"{neg/len(df)*100:.1f}%")
 
 # Row 1
 left, right = st.columns(2)
 
 with left:
+    st.subheader("Emotion Distribution")
+    if "emotion_label" in df.columns:
+        emotion_counts = df["emotion_label"].value_counts().reset_index()
+        emotion_counts.columns = ["emotion", "count"]
+        fig = px.pie(emotion_counts, names="emotion", values="count", hole=0.3, 
+                     color="emotion", color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig, width='stretch')
+    else:
+        st.warning("Emotion data not found. Please run the updated pipeline.")
+
+with right:
     st.subheader("Sentiment Over Time")
     time_sent = df.groupby(["hour", "sentiment_label"]).size().reset_index(name="count")
     fig = px.line(time_sent, x="hour", y="count", color="sentiment_label")
-    st.plotly_chart(fig, width='stretch')
-
-with right:
-    st.subheader("Confidence Distribution")
-    fig = px.histogram(df, x="confidence", color="sentiment_label", nbins=20)
     st.plotly_chart(fig, width='stretch')
 
 # Row 2
 left, right = st.columns(2)
 
 with left:
-    st.subheader("Sentiment by Video")
-    vid_sent = df.groupby(["video_id", "sentiment_label"]).size().reset_index(name="count")
-    fig = px.bar(vid_sent, x="video_id", y="count", color="sentiment_label")
-    st.plotly_chart(fig, width='stretch')
+    st.subheader("Emotion by Video")
+    if "emotion_label" in df.columns:
+        vid_emo = df.groupby(["video_id", "emotion_label"]).size().reset_index(name="count")
+        fig = px.bar(vid_emo, x="video_id", y="count", color="emotion_label", barmode="group")
+        st.plotly_chart(fig, width='stretch')
+    else:
+        st.info("Run the pipeline to see emotion breakdown by video.")
 
 with right:
-    st.subheader("Top Authors by Sentiment")
-    # `dim_author` uses column name `author`, ensure we reference that
-    auth_sent = df.groupby(["author", "sentiment_label"]).size().reset_index(name="count")
-    top_authors = auth_sent.groupby("author")["count"].sum().nlargest(10).index
-    fig = px.bar(auth_sent[auth_sent["author"].isin(top_authors)], 
-                 x="author", y="count", color="sentiment_label")
+    st.subheader("Confidence Distribution")
+    fig = px.histogram(df, x="confidence", color="sentiment_label", nbins=20)
     st.plotly_chart(fig, width='stretch')
 
 # Row 3: Confidence analysis
@@ -103,4 +115,4 @@ high_conf = df[df["confidence"] > 0.95][["text_cleaned", "sentiment_label", "con
 st.dataframe(high_conf)
 
 st.markdown("---")
-st.markdown("Built with PySpark + Kafka + Hugging Face + PostgreSQL + Streamlit")
+st.markdown("Built with PySpark + Kafka + PostgreSQL + Streamlit")
